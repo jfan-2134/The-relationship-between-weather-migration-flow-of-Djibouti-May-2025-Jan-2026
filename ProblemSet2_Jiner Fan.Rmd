@@ -1,0 +1,211 @@
+---
+title: "ProblemSet2_Jiner Fan"
+author: "Jiner Fan"
+date: "2026-03-07"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+library(tidyverse)
+library(ggplot2)
+library(GGally)
+install.packages("readxl")
+
+library(readxl)
+
+```{r, message = FALSE}
+
+df <- read.csv("C:/Users/dell/Downloads/unhcr-situations.csv")
+
+str(df)
+head(df)
+
+df1 <- df[-1,]
+
+```
+```{r}
+
+na_rows <- df1[!complete.cases(df1), ]
+
+#Rename df as asylum_seeker_df 
+asylum_seeker_df <- df
+
+rm(df)
+
+```
+
+#Import rain perception data 
+```{r}
+rainfall_df <- read.csv("C:/Users/dell/Downloads/dji-rainfall-subnat-full.csv.csv")
+
+str(rainfall_df)
+head(rainfall_df)
+colnames(asylum_seeker_df)
+colnames(rainfall_df)
+head(asylum_seeker_df)
+head(rainfall_df)
+```
+#filter asylum_seeker_df by country and date
+```{r}
+library(dplyr)
+
+str(asylum_seeker_df)
+asylum_seeker_df$Date <- as.Date(asylum_seeker_df$Date)
+
+asylum_seeker_df <- asylum_seeker_df %>%
+  filter(Country == "Djibouti", 
+         Population.type == "Asylum-Seekers",
+         Date == "2025-01-01",
+         Date == "2026-01-01")
+
+asylum_seeker_df <- asylum_seeker_df %>%
+  group_by(Date) %>%
+  summarise(asylum_seekers = sum(asylum_seekers))
+
+```
+#filter rain_fall_df by month
+```{r}
+install.packages("lubridate")
+library(lubridate)
+
+rainfall_df <- rainfall_df %>%
+  mutate(date = floor_date(as.Date(date), "month") + months(1) - days(1)) %>%
+  group_by(date) %>%
+  summarise(rainfall_mm = mean(rainfall_mm, na.rm = TRUE))
+
+unique(rainfall_df$date)
+nrow(rainfall_df)
+
+```
+#combine those two df
+```{r}
+asylum_seeker_df$date <- as.Date(asylum_seeker_df$date)
+rainfall_df$date <- as.Date(rainfall_df$date)
+
+combined_df <- asylum_seeker_df %>%
+  inner_join(rainfall_df, by = "date")
+
+combined_df$date <- as.Date(combined_df$date)
+
+```
+
+#group data prep for graph
+
+```{r}
+combined_df$asylum_seekers <- as.numeric(combined_df$asylum_seekers)
+combined_df$rainfall_mm <- as.numeric(combined_df$rainfall_mm)
+
+summary_asylum <- combined_df %>%
+  group_by(date) %>%
+  summarize_at(vars(asylum_seekers),
+               list(sum))
+
+summary_rainfall <- combined_df %>%
+  group_by(date) %>%
+  summarize_at(vars(rainfall_mm),
+               list(sum))
+
+df_asylum <- data.frame(summary_asylum)
+df_rainfall <- data.frame(summary_rainfall)
+
+combined_df <- df_asylum %>%
+  inner_join(df_rainfall, by = "date")
+
+combined_df$date <- as.Date(combined_df$date)
+combined_df$asylum_seekers <- as.numeric(combined_df$asylum_seekers)
+combined_df$rainfall_mm <- as.numeric(combined_df$rainfall_mm)
+
+combined_long <- combined_df %>%
+  select(date, rainfall_mm, asylum_seekers) %>%
+  pivot_longer(cols = c(rainfall_mm, asylum_seekers),
+               names_to = "variable",
+               values_to = "value") %>%
+  mutate(variable = recode(variable,
+                           "rainfall_mm" = "Rainfall (mm)",
+                           "asylum_seekers" = "Asylum Seekers"))
+head(combined_long)
+
+```
+
+
+#graph 1 line graph
+```{r}
+plot1 <- ggplot(combined_df, aes(x = date, y = asylum_seekers))
+plot1
+
+plot1 <- plot1 +
+  geom_line() +
+  geom_point()
+plot1
+
+plot1 <- ggplot(combined_df, aes(x = date)) +
+  geom_line(aes(y = asylum_seekers, color = "Asylum Seekers"),
+            size = 1.2) +
+  geom_point(aes(y = asylum_seekers, color = "Asylum Seekers"),
+             size = 2.5) +
+  geom_line(aes(y = rainfall_mm * 5000, color = "Rainfall (mm)"),
+            size = 1.2) +
+  geom_point(aes(y = rainfall_mm * 5000, color = "Rainfall (mm)"),
+             size = 2.5) +
+  theme_bw()
+plot1
+
+plot1 <- plot1 +
+  scale_y_continuous(
+    name = "Asylum Seekers",
+    sec.axis = sec_axis(~ . / 50, name = "Rainfall (mm)")
+  ) +
+  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  labs(x = "1 Month",
+       color = "Indicator",
+       title = "Rainfall and Asylum Seekers in Djibouti (2025)",
+       caption = "Sources: UNHCR, CHIRPS")
+
+plot1 <- plot1 +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b %Y")
+plot1
+
+```
+#Export Line graph
+```{r}
+jpeg("Djibouti_Line_Graph.jpeg", res = 600, units = "in", width = 7, height = 5)
+plot1
+dev.off()
+```
+
+#Graph Bar Graph
+```{r}
+plot2 <- ggplot(combined_long, aes(x = date, y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~variable, scales = "free_y") +
+  theme_bw()
+plot2
+```
+#Label Bar graph
+```{r}
+plot2 <- plot2 +
+  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  scale_fill_manual(values = c("Asylum Seekers" = "#e05c2d",
+                                "Rainfall (mm)" = "#1a80bb")) +
+  labs(x = "Month",
+       y = "Value",
+       fill = "Indicator",
+       title = "Rainfall and Asylum Seekers in Djibouti (2025)",
+       caption = "Sources: UNHCR, CHIRPS")
+plot2
+```
+#Export Bar graph
+```{r}
+jpeg("Djibouti_Bar_Chart.jpeg", res = 600, units = "in", width = 7, height = 5)
+plot2
+dev.off()
+```
+#Analysis of two graphs
+The two graphs shows the relationship between monthly rainfall levels and asylum seeker presence in Djibouti between April and June 2025. The line graph displays both variables on the same graph with dual y-axes, while the bar chart uses facet_wrap() to present each variable in separate panels, makes it clearer individual trend analysis.
+
+From the line graph, both rainfall and asylum seekers follow a similar upward trend between April and May 2025, suggesting a potential positive correlation. Rainfall peaked in May at approximately 2.6mm, coinciding with the largest influx of asylum seekers at 14,342 individuals. This simultaneous peak suggests that heavier rainfall may be associated with increased displacement activity in the region. In June, rainfall dropped sharply to 0.57mm while asylum seeker numbers remained relatively high at 13,839, indicating a slight lag effect where displacement continues even after rainfall decreases.This could be because of the long-tail effect of asylum system processing in face of large influx of asylum seeker, which could roll over to the following month.
+
+The bar chart comfirmed this hypothsis, that the asylum seeker panel shows a dramatic increase from April (1,722) to May (14,342), while the rainfall panel mirrors this pattern with its own peak in May. This visual alignment across both panels further supports the possibility of a relationship between the two variables.
